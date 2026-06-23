@@ -1,0 +1,20 @@
+# Rust build artifacts
+/target
+
+# Cargo lock for libraries — but loopctl is a binary, so keep it tracked.
+# (No entry here on purpose; Cargo.lock IS committed.)
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Runtime / state — these are local-only, not part of the source tree.
+*.log
+*.tmp
+*.bak.*
+
+# BATS install cache used by the CLI integration tests.
+/tests/cli/.bats-cache/

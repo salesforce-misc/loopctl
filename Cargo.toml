@@ -1,0 +1,50 @@
+[package]
+name = "agent-loop-workbench"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Orchestrate Claude Code agent loops across Konsole windows on KDE Plasma."
+license = "Apache-2.0"
+default-run = "loopctl"
+
+[lib]
+name = "agent_loop_workbench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "loopctl"
+path = "src/main.rs"
+
+# Throwaway spike — Step 1 of the implementation plan.
+# De-risks the Konsole + KWin D-Bus surface before we build the trait around it.
+[[bin]]
+name = "konsole-spike"
+path = "src/bin/konsole_spike.rs"
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = { version = "0.10", features = ["serde"] }
+directories = "5"
+libc = "0.2"
+nix = { version = "0.29", features = ["signal"] }
+parking_lot = "0.12"
+ratatui = "0.29"
+crossterm = "0.28"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+shellexpand = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process", "fs", "sync", "signal", "net", "io-util"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+which = "7"
+zbus = { version = "4", default-features = false, features = ["tokio"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread", "time", "process"] }
+zbus = { version = "4", default-features = false, features = ["tokio"] }

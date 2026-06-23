@@ -1,0 +1,12 @@
+loopctl
+Copyright (c) Salesforce, Inc.
+
+This product includes software developed at Salesforce, Inc.
+(https://www.salesforce.com/).
+
+Licensed under the Apache License, Version 2.0 (the "License").
+See LICENSE.txt for the full license text.
+
+This product depends on third-party software. For the complete list of
+dependencies, their versions, and their license texts, see
+THIRD_PARTY_NOTICES.md in this distribution.
