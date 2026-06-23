@@ -3,6 +3,17 @@
 Thanks for your interest in `loopctl`. This document captures the
 conventions the maintainers follow so PRs land cleanly.
 
+## Governance Model
+
+### Published but not supported
+
+This project is open sourced because it may contain useful or
+interesting code and concepts that we wish to share with the larger
+open source community. Although occasional work may be done on it, the
+maintainers will not be actively looking for or soliciting
+contributions. Issues and pull requests will be reviewed on a
+best-effort basis.
+
 ## Licensing of contributions
 
 `loopctl` is licensed under Apache-2.0 (see `LICENSE.txt`). By
@@ -67,6 +78,16 @@ The notices-freshness CI gate will fail the build if
   behavior. The bootstrap script downloads BATS pinned to a
   SHA-256 — bumping the version means updating both `VERSION` and
   `EXPECTED_SHA256`.
+
+## Contributor License Agreement ("CLA")
+
+In order to accept your pull request, we need you to submit a CLA. You
+only need to do this once to work on any of Salesforce's open source
+projects. Complete your CLA here: <https://cla.salesforce.com/sign-cla>.
+
+By contributing your code, you agree to license your contribution under
+the terms of the project [LICENSE](LICENSE.txt) and to sign the
+Salesforce CLA above.
 
 ## Reporting security issues
 

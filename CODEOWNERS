@@ -1,2 +1,4 @@
 # See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# Comment line immediately above the ownership line is reserved for related information. Please be careful while editing.
+#ECCN:Open Source
 * @afalko
