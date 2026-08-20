@@ -64,6 +64,7 @@ pub async fn up(
                 since: chrono::Utc::now(),
             };
             entry.pane_id = None;
+            entry.desired_up = false;
             continue;
         }
         if let Err(e) = bring_up_loop(config, plugin.as_ref(), state, lc).await {
@@ -113,12 +114,66 @@ pub async fn up_one(
     bring_up_loop(config, plugin, state, lc).await
 }
 
+/// Restore every loop the user had live before the daemon stopped.
+///
+/// Intended to run once at daemon startup, AFTER rehydrate + relink: any
+/// loop whose Konsole window survived is already adopted, so `bring_up_loop`
+/// sees a live pane and no-ops. Only loops with `desired_up == true` AND
+/// `active == true` are (re)spawned — a fresh install, a never-upped loop,
+/// or one the user explicitly `down`ed/closed stays down, so a restart
+/// never opens windows the user didn't ask for.
+///
+/// Per-loop failures are recorded as `FailedRecreate` (the health loop will
+/// keep retrying) and never abort the sweep. Returns the number of loops
+/// that ended up with a live pane.
+pub async fn restore_desired_up(
+    config: &WorkbenchConfig,
+    plugin: Arc<dyn TerminalPlugin>,
+    state: &mut GlobalState,
+) -> usize {
+    let mut restored = 0usize;
+    for lc in &config.loops {
+        if !lc.active {
+            continue;
+        }
+        let wants_up = state
+            .loops
+            .get(&lc.name)
+            .map(|s| s.desired_up)
+            .unwrap_or(false);
+        if !wants_up {
+            continue;
+        }
+        match bring_up_loop(config, plugin.as_ref(), state, lc).await {
+            Ok(()) => restored += 1,
+            Err(e) => {
+                tracing::warn!(name = %lc.name, error = %e, "restore of previously-live loop failed");
+                let entry = state.loops.entry(lc.name.clone()).or_default();
+                entry.pane_id = None;
+                entry.pane_health = PaneHealth::FailedRecreate {
+                    since: chrono::Utc::now(),
+                    attempts: 1,
+                    last_error: format!("{e:#}"),
+                };
+            }
+        }
+    }
+    restored
+}
+
 async fn bring_up_loop(
     config: &WorkbenchConfig,
     plugin: &dyn TerminalPlugin,
     state: &mut GlobalState,
     lc: &LoopConfig,
 ) -> Result<()> {
+    // Record the user's intent up-front. Even if this call fails partway
+    // (missing workdir, bad README anchor), the durable "should be up"
+    // marker persists so startup restore and the health loop keep trying.
+    // This is the single choke point for `up`, `up_one`, `reopen`,
+    // health-check recovery, and move-group respawn.
+    state.loops.entry(lc.name.clone()).or_default().desired_up = true;
+
     let loops_dir = crate::util::expand_path(&config.workbench.claude_loops_dir);
     let loops_dir = Path::new(&loops_dir);
     let readme_path = loops_dir.join("README.md");
@@ -235,6 +290,9 @@ pub async fn down(
         }
         if let Some(s) = state.loops.get_mut(&lc.name) {
             s.pane_id = None;
+            // `down` is a deliberate teardown — drop the restore intent so
+            // a later daemon restart doesn't resurrect what the user closed.
+            s.desired_up = false;
         }
     }
     Ok(())
@@ -326,6 +384,7 @@ async fn handle_dead_pane(
         if !c.active {
             let entry = state.loops.entry(name.to_string()).or_default();
             entry.pane_id = None;
+            entry.desired_up = false;
             entry.pane_health = PaneHealth::Inactive { since: now };
             return;
         }
@@ -596,6 +655,7 @@ pub async fn close_loop(
     let entry = state.loops.entry(name.to_string()).or_default();
     entry.pane_id = None;
     entry.next_tick = None;
+    entry.desired_up = false;
     entry.pane_health = PaneHealth::Inactive {
         since: chrono::Utc::now(),
     };
@@ -1075,6 +1135,94 @@ claude_args = ["--allowed-tools", "Read"]
             }
             other => panic!("expected FailedRecreate, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn restore_respawns_desired_up_loops_and_skips_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        write_min_loops_dir(
+            dir.path(),
+            &[
+                ("alpha — label", "alpha-dir"),
+                ("beta — label", "beta-dir"),
+                ("gamma — label", "gamma-dir"),
+            ],
+        );
+        let cfg = cfg_for(dir.path());
+        let plugin = Arc::new(MockTerminalPlugin::new());
+        let mut state = GlobalState::default();
+
+        // Bring everything up: all three get desired_up = true.
+        up(&cfg, plugin.clone(), &mut state).await.unwrap();
+        for name in ["alpha", "beta", "gamma"] {
+            assert!(state.loops.get(name).unwrap().desired_up);
+        }
+
+        // Simulate a restart where beta's window died while the daemon was
+        // down (pane gone, pane_id cleared) but the intent survives.
+        let beta_pane =
+            crate::terminal::PaneId(state.loops.get("beta").unwrap().pane_id.clone().unwrap());
+        plugin.kill(&beta_pane);
+        state.loops.get_mut("beta").unwrap().pane_id = None;
+
+        // Simulate gamma having been explicitly closed before the restart:
+        // still active in config, but intent dropped.
+        let gamma_pane =
+            crate::terminal::PaneId(state.loops.get("gamma").unwrap().pane_id.clone().unwrap());
+        plugin.kill(&gamma_pane);
+        {
+            let g = state.loops.get_mut("gamma").unwrap();
+            g.pane_id = None;
+            g.desired_up = false;
+        }
+
+        let restored = restore_desired_up(&cfg, plugin.clone(), &mut state).await;
+
+        // alpha (already alive, no-op) + beta (respawned) were desired_up;
+        // gamma was not, so it stays down.
+        assert_eq!(restored, 2, "alpha + beta should be counted, not gamma");
+        assert!(state.loops.get("beta").unwrap().pane_id.is_some());
+        assert!(matches!(
+            state.loops.get("beta").unwrap().pane_health,
+            PaneHealth::Running
+        ));
+        assert!(
+            state.loops.get("gamma").unwrap().pane_id.is_none(),
+            "gamma was not desired_up and must not be resurrected"
+        );
+    }
+
+    #[tokio::test]
+    async fn restore_is_a_no_op_on_fresh_state_and_after_down() {
+        let dir = tempfile::tempdir().unwrap();
+        write_min_loops_dir(
+            dir.path(),
+            &[
+                ("alpha — label", "alpha-dir"),
+                ("beta — label", "beta-dir"),
+                ("gamma — label", "gamma-dir"),
+            ],
+        );
+        let cfg = cfg_for(dir.path());
+        let plugin = Arc::new(MockTerminalPlugin::new());
+
+        // Fresh state: nothing was ever upped, so restore spawns nothing.
+        let mut fresh = GlobalState::default();
+        assert_eq!(restore_desired_up(&cfg, plugin.clone(), &mut fresh).await, 0);
+        assert!(plugin
+            .ops()
+            .iter()
+            .all(|op| !matches!(op, Op::EnsurePane { .. })));
+
+        // After an explicit `down`, intent is cleared, so a subsequent
+        // restart restores nothing either.
+        let mut state = GlobalState::default();
+        up(&cfg, plugin.clone(), &mut state).await.unwrap();
+        down(&cfg, plugin.clone(), &mut state).await.unwrap();
+        for name in ["alpha", "beta", "gamma"] {
+            assert!(!state.loops.get(name).unwrap().desired_up);
+        }
+        assert_eq!(restore_desired_up(&cfg, plugin.clone(), &mut state).await, 0);
     }
 
     #[tokio::test]

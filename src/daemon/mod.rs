@@ -137,6 +137,20 @@ pub async fn run(
     state.terminal = plugin.name().to_string();
     state.started_at = Some(chrono::Utc::now());
 
+    // Migration: state files written before `desired_up` existed (schema
+    // < 2) have no restore intent recorded. Backfill it from the transient
+    // `pane_id` — a loop with a live pane in the last-persisted state was,
+    // by definition, up — so the first restart after upgrading still
+    // restores the loops the user had running.
+    if state.schema_version < state::CURRENT_SCHEMA_VERSION {
+        for ls in state.loops.values_mut() {
+            if ls.pane_id.is_some() {
+                ls.desired_up = true;
+            }
+        }
+        state.schema_version = state::CURRENT_SCHEMA_VERSION;
+    }
+
     // Re-adopt any konsoles we spawned in a previous run before we wire
     // up IPC. Plugins that don't manage groups (mock) no-op.
     plugin
@@ -181,6 +195,17 @@ pub async fn run(
                 tracing::warn!(name = %lc.name, error = %e, "find_pane_by_title failed during relink");
             }
         }
+    }
+
+    // Restore loops the user had live before the daemon stopped (crash,
+    // reboot, or binary upgrade). Runs after relink, so loops whose window
+    // survived are already adopted and no-op here; only `desired_up` +
+    // `active` loops without a live pane get respawned. Never-upped loops
+    // and anything the user `down`ed/closed stay down.
+    let restored =
+        crate::orchestrator::restore_desired_up(&config, plugin.clone(), &mut state).await;
+    if restored > 0 {
+        tracing::info!(restored, "restored previously-live loops on startup");
     }
 
     let shutdown = Arc::new(Notify::new());

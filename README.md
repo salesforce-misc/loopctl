@@ -1,4 +1,4 @@
-# loopctl — agent-loop-workbench
+# loopctl
 
 A Rust CLI + TUI for orchestrating long-running [Claude Code][claude-code]
 "loops" — persistent agent sessions whose state lives in a markdown repo.
@@ -32,7 +32,11 @@ macOS Terminal/iTerm2 stubs exist but return `NotImplemented`. X11 only
   `failed-recreate` in the TUI.
 - **Survive daemon restarts.** Each spawned konsole carries a UUID env
   var so a re-launched daemon re-adopts existing windows instead of
-  spawning duplicates.
+  spawning duplicates. Loops that were live before the daemon went down
+  (crash, reboot, binary upgrade) are **restored on startup** — any whose
+  window didn't survive is respawned with its resume prompt re-pasted.
+  Loops you never brought up, or explicitly `down`ed/closed, stay down, so
+  a restart never opens windows you didn't ask for.
 - **TUI** with arrow-key navigation, force-tick (`t`), focus
   (`a`), close (`c`), update prompt hint (`u`), move-group (`g`),
   load-repo / persist (`p`), and recover-now (`R`).
@@ -42,16 +46,16 @@ macOS Terminal/iTerm2 stubs exist but return `NotImplemented`. X11 only
 Requires a recent stable Rust toolchain (1.95+) and KDE Plasma 5/6 on X11.
 
 ```bash
-git clone <repo-url> ~/agent-loop-workbench
-cd ~/agent-loop-workbench
+git clone <repo-url> ~/loopctl
+cd ~/loopctl
 cargo build --release
 ```
 
-The binary lands at `~/agent-loop-workbench/target/release/loopctl`. Add
+The binary lands at `~/loopctl/target/release/loopctl`. Add
 that to PATH or symlink:
 
 ```bash
-ln -s ~/agent-loop-workbench/target/release/loopctl ~/.local/bin/loopctl
+ln -s ~/loopctl/target/release/loopctl ~/.local/bin/loopctl
 ```
 
 Run-time deps: `konsole`, `git`, `python3`, `journalctl --user`.

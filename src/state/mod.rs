@@ -18,7 +18,9 @@
 
 pub mod model;
 
-pub use model::{GlobalState, GroupState, LoopState, Metrics, PaneHealth};
+pub use model::{
+    CURRENT_SCHEMA_VERSION, GlobalState, GroupState, LoopState, Metrics, PaneHealth,
+};
 
 use std::path::Path;
 
@@ -112,6 +114,7 @@ mod tests {
             "alpha-loop".into(),
             LoopState {
                 pane_id: Some("konsole:12345:7".into()),
+                desired_up: true,
                 last_tick: Some(chrono::Utc::now()),
                 next_tick: None,
                 last_dispatch_kind: Some("tick_script".into()),

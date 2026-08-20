@@ -304,12 +304,24 @@ async fn cmd_update_prompt(
 /// daemon, wait for it to come up, and report success or the failure.
 async fn cmd_default(cli: &Cli) -> Result<()> {
     let socket = resolve_socket(cli)?;
-    if socket.exists() {
+    if daemon_listening(&socket).await {
         println!(
             "loopctl daemon is already running (socket: {}).\n\nNext steps:\n  loopctl tui      — open the workbench TUI\n  loopctl status   — text snapshot\n  loopctl --help   — full command list",
             socket.display()
         );
         return Ok(());
+    }
+    // A socket file with no daemon behind it (crashed/killed daemon) would
+    // otherwise make the readiness wait below return instantly against the
+    // stale path. Reclaim it now; the fresh daemon's bind_socket also clears
+    // it, but removing here keeps `while !socket.exists()` honest.
+    if socket.exists() {
+        if let Err(e) = std::fs::remove_file(&socket) {
+            eprintln!(
+                "note: could not remove stale socket {}: {e}",
+                socket.display()
+            );
+        }
     }
     // Pre-flight: validate the workbench.toml resolution + parse before
     // we spawn anything. A bad user config would otherwise produce a
@@ -443,6 +455,19 @@ async fn cmd_delete_loop(cli: &Cli, name: &str, yes: bool) -> Result<()> {
 /// `loopctl restart` — graceful daemon shutdown + spawn a fresh detached
 /// daemon from `current_exe()`. The fresh daemon picks up whatever binary
 /// invoked `restart`, so this is also how you "reload after rebuild."
+/// Probe whether a daemon is actually listening on `socket`, as opposed
+/// to a stale socket file left behind by a crashed or killed daemon.
+/// A successful connect means something is accepting connections;
+/// ECONNREFUSED (or a missing file) means the path is dead and can be
+/// reclaimed. Checking `socket.exists()` alone is not enough — the file
+/// outlives the process that created it.
+async fn daemon_listening(socket: &std::path::Path) -> bool {
+    if !socket.exists() {
+        return false;
+    }
+    tokio::net::UnixStream::connect(socket).await.is_ok()
+}
+
 /// Ask the running daemon for its compiled version string. Returns
 /// `None` if no daemon is reachable (socket missing, RPC error, or the
 /// running daemon predates the `version` method).

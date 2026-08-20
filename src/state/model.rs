@@ -41,6 +41,11 @@ pub struct GlobalState {
     pub loops: BTreeMap<String, LoopState>,
 }
 
+/// Bumped to 2 when `LoopState::desired_up` was added. The daemon
+/// backfills the field from `pane_id` when it loads a v1 state file
+/// (see the migration in [`crate::daemon::run`]).
+pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+
 fn default_schema_version() -> u32 {
     1
 }
@@ -48,7 +53,7 @@ fn default_schema_version() -> u32 {
 impl GlobalState {
     pub fn new(terminal: impl Into<String>) -> Self {
         Self {
-            schema_version: 1,
+            schema_version: CURRENT_SCHEMA_VERSION,
             terminal: terminal.into(),
             started_at: Some(Utc::now()),
             groups: BTreeMap::new(),
@@ -74,6 +79,14 @@ pub struct LoopState {
     /// Pane id from the active TerminalPlugin. None ⇒ pane never created.
     #[serde(default)]
     pub pane_id: Option<String>,
+    /// User intent: should this loop have a live pane right now? Set true
+    /// when the loop is brought up, false when explicitly brought down or
+    /// closed. Unlike `pane_id` (which is transient and cleared whenever a
+    /// pane dies), this survives crashes/reboots so the daemon can restore
+    /// previously-live loops on startup. Defaults false, so a fresh install
+    /// or a never-upped loop spawns nothing until the user runs `up`.
+    #[serde(default)]
+    pub desired_up: bool,
     #[serde(default)]
     pub last_tick: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -173,6 +186,7 @@ mod tests {
     fn loop_state_round_trip_with_optional_fields() {
         let s = LoopState {
             pane_id: Some("konsole:1:2".into()),
+            desired_up: true,
             last_tick: Some(Utc::now()),
             next_tick: None,
             last_dispatch_kind: Some("tick_script".into()),
