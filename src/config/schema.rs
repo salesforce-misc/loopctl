@@ -41,6 +41,7 @@
 //! tick_script      = "skill/scripts/tick.py"  # required iff dispatch = "tick_script"
 //! ```
 
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Result};
@@ -57,9 +58,54 @@ pub struct WorkbenchConfig {
     pub workbench: WorkbenchSettings,
     #[serde(default)]
     pub terminal: TerminalSettings,
+    /// Optional per-agent overrides, keyed by agent name (`[agents.codex]`).
+    /// Merged over the built-in presets (`claude`, `codex`, `opencode`);
+    /// unknown names define brand-new agents. A loop selects one via its
+    /// `agent` field (or inherits `workbench.default_agent`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agents: BTreeMap<String, AgentOverride>,
     #[serde(default)]
     pub loops: Vec<LoopConfig>,
 }
+
+/// Per-agent override from an `[agents.<name>]` table. Either field may be
+/// omitted, in which case the built-in preset (if any) supplies it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+}
+
+/// A fully-resolved agent launch spec: the binary to exec in the loop's
+/// pane plus the argv that follows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedAgent {
+    pub binary: String,
+    pub args: Vec<String>,
+}
+
+/// Built-in agent presets: `(binary, hands-off args)`. These are the
+/// zero-config defaults; `[agents.<name>]` and the per-loop / workbench
+/// arg fields layer on top. Returns `None` for names with no preset (a
+/// custom agent defined purely via `[agents.<name>]`).
+pub fn builtin_agent_preset(name: &str) -> Option<(&'static str, Vec<String>)> {
+    match name {
+        // Long-running loops run hands-off; each agent's "skip all
+        // confirmation prompts" flag is baked in as the default.
+        "claude" => Some(("claude", vec!["--dangerously-skip-permissions".to_string()])),
+        "codex" => Some((
+            "codex",
+            vec!["--dangerously-bypass-approvals-and-sandbox".to_string()],
+        )),
+        "opencode" => Some(("opencode", vec![])),
+        _ => None,
+    }
+}
+
+/// Names of the built-in agent presets, for error messages.
+pub const BUILTIN_AGENTS: &[&str] = &["claude", "codex", "opencode"];
 
 fn is_zero_u32(n: &u32) -> bool {
     *n == 0
@@ -73,16 +119,33 @@ pub struct WorkbenchSettings {
     /// stubs and are rejected at validation time.
     pub terminal: String,
     pub central_group: String,
-    #[serde(default = "default_claude_binary")]
-    pub claude_binary: String,
+    /// Which agent a loop runs when it doesn't name one itself. Must
+    /// resolve to a built-in preset (`claude`, `codex`, `opencode`) or an
+    /// `[agents.<name>]` entry. Defaults to `claude`.
+    #[serde(default = "default_agent_name")]
+    pub default_agent: String,
+    /// Binary for the *default* agent. Back-compat alias: `claude_binary`.
+    /// `None` ⇒ take it from the default agent's `[agents.*]` entry or
+    /// built-in preset. Non-default agents are configured via `[agents.*]`.
+    #[serde(
+        default,
+        alias = "claude_binary",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agent_binary: Option<String>,
     #[serde(default = "default_dispatch_kind")]
     pub default_dispatch: Dispatch,
-    /// Default args appended to every `claude` invocation. Loops with
-    /// `claude_args = []` (an empty array) explicitly opt out and get
-    /// stock claude with normal permission prompting. Loops that omit
-    /// the field entirely inherit this list.
-    #[serde(default = "default_claude_args")]
-    pub claude_args: Vec<String>,
+    /// Default args for the *default* agent. Back-compat alias:
+    /// `claude_args`. A loop with `agent_args = []` (an empty array)
+    /// explicitly opts out and runs the stock agent with normal
+    /// permission prompting; a loop that omits it inherits this list (or,
+    /// when `None` here, the agent's `[agents.*]` / preset args).
+    #[serde(
+        default,
+        alias = "claude_args",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agent_args: Option<Vec<String>>,
     /// Milliseconds to wait between pasting the resume prompt body and
     /// sending the CR (Enter) that submits it. Default 700ms — long
     /// enough for claude to finish startup and enable raw mode, but
@@ -97,17 +160,11 @@ fn default_paste_submit_delay_ms() -> u64 {
     700
 }
 
-fn default_claude_binary() -> String {
+fn default_agent_name() -> String {
     "claude".to_string()
 }
 fn default_dispatch_kind() -> Dispatch {
     Dispatch::ResumePrompt
-}
-fn default_claude_args() -> Vec<String> {
-    // Long-running loops are trusted to run hands-off — see README.
-    // Override at workbench level by setting `claude_args = [...]` or
-    // disable per-loop by setting `claude_args = []`.
-    vec!["--dangerously-skip-permissions".to_string()]
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -148,17 +205,28 @@ pub struct LoopConfig {
     /// Defaults to no args.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tick_args: Vec<String>,
-    /// Per-loop claude args. `None` ⇒ inherit `WorkbenchSettings.claude_args`.
-    /// `Some(vec![])` ⇒ explicit opt-out: run stock `claude` with the
-    /// user's normal permission prompts (the typical state for a brand
-    /// new loop that hasn't earned hands-off trust yet).
+    /// Which agent runs in this loop's pane. `None` ⇒ inherit
+    /// `WorkbenchSettings.default_agent`. Must resolve to a built-in preset
+    /// or an `[agents.<name>]` entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// Per-loop agent args. Back-compat alias: `claude_args`. `None` ⇒
+    /// inherit (the agent's `[agents.*]` args, else the workbench-wide
+    /// `agent_args`, else the preset). `Some(vec![])` ⇒ explicit opt-out:
+    /// run the stock agent with the user's normal permission prompts (the
+    /// typical state for a brand new loop that hasn't earned hands-off
+    /// trust yet).
     ///
     /// `skip_serializing_if = is_none` is critical: without it, every
     /// toml round-trip (move-group, close-loop, etc.) emits
-    /// `claude_args = []` for `None`, which silently overrides the
+    /// `agent_args = []` for `None`, which silently overrides the
     /// workbench-wide default the next time the config is read.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub claude_args: Option<Vec<String>>,
+    #[serde(
+        default,
+        alias = "claude_args",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agent_args: Option<Vec<String>>,
     /// `false` ⇒ this loop is closed: skip it during `up`, scheduled
     /// ticks, and health checks; close any live pane. Persists across
     /// daemon restarts. Defaults to `true` (active) when the field is
@@ -182,17 +250,6 @@ impl LoopConfig {
         Schedule::from_str(&self.schedule)
     }
 
-    /// Effective claude args for this loop. If the loop has its own
-    /// `claude_args` set (even an empty list), it wins. Otherwise the
-    /// workbench-wide default applies.
-    pub fn effective_claude_args<'a>(
-        &'a self,
-        workbench: &'a WorkbenchSettings,
-    ) -> &'a [String] {
-        self.claude_args
-            .as_deref()
-            .unwrap_or(&workbench.claude_args)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -371,6 +428,29 @@ impl WorkbenchConfig {
                 self.workbench.terminal
             );
         }
+        // Agent names (default + any `[agents.*]` keys + per-loop) must be
+        // safe identifiers, and `default_agent` must actually resolve to a
+        // known agent so a typo fails loudly instead of trying to exec a
+        // nonexistent binary named after the typo.
+        if !is_safe_identifier(&self.workbench.default_agent) {
+            bail!(
+                "workbench.default_agent = `{}` must match [A-Za-z0-9._-]+",
+                self.workbench.default_agent
+            );
+        }
+        for key in self.agents.keys() {
+            if !is_safe_identifier(key) {
+                bail!("agent name `{key}` must match [A-Za-z0-9._-]+");
+            }
+        }
+        if !self.is_known_agent(&self.workbench.default_agent) {
+            bail!(
+                "workbench.default_agent = `{}` is unknown (built-ins: {}; or define it under [agents.{}])",
+                self.workbench.default_agent,
+                BUILTIN_AGENTS.join(", "),
+                self.workbench.default_agent,
+            );
+        }
         // Loop names must be unique — they're the lookup key in
         // state.json, RPC params, and CLI subcommands. A duplicate
         // means `loopctl tick <name>` (etc.) becomes ambiguous.
@@ -429,6 +509,26 @@ impl WorkbenchConfig {
                     );
                 }
             }
+            // Per-loop agent must be a safe identifier and resolve to a
+            // known agent (built-in preset or an `[agents.*]` entry).
+            if let Some(agent) = lc.agent.as_deref() {
+                if !is_safe_identifier(agent) {
+                    bail!(
+                        "loop `{}`: agent = `{}` must match [A-Za-z0-9._-]+",
+                        lc.name,
+                        agent
+                    );
+                }
+                if !self.is_known_agent(agent) {
+                    bail!(
+                        "loop `{}`: agent = `{}` is unknown (built-ins: {}; or define it under [agents.{}])",
+                        lc.name,
+                        agent,
+                        BUILTIN_AGENTS.join(", "),
+                        agent,
+                    );
+                }
+            }
             // Eager schedule parse.
             lc.parsed_schedule()
                 .map_err(|e| anyhow!("loop `{}`: invalid schedule: {e}", lc.name))?;
@@ -450,6 +550,63 @@ impl WorkbenchConfig {
 
     pub fn loop_by_name(&self, name: &str) -> Option<&LoopConfig> {
         self.loops.iter().find(|l| l.name == name)
+    }
+
+    /// The agent name a loop runs under (its own `agent`, else the
+    /// workbench default).
+    pub fn agent_name_for<'a>(&'a self, lc: &'a LoopConfig) -> &'a str {
+        lc.agent.as_deref().unwrap_or(&self.workbench.default_agent)
+    }
+
+    /// Returns true iff `name` is a known agent — either a built-in preset
+    /// or a user-defined `[agents.<name>]` entry.
+    pub fn is_known_agent(&self, name: &str) -> bool {
+        builtin_agent_preset(name).is_some() || self.agents.contains_key(name)
+    }
+
+    /// Resolve the binary + args to launch for a loop. Precedence, highest
+    /// first:
+    ///   binary: `[agents.<name>].binary` → (default agent only)
+    ///           `workbench.agent_binary` → built-in preset → the name
+    ///           itself.
+    ///   args:   per-loop `agent_args` → `[agents.<name>].args` →
+    ///           (default agent only) `workbench.agent_args` → preset → [].
+    /// The "default agent only" rungs are the back-compat path: an old
+    /// config's `claude_binary`/`claude_args` (now `agent_binary`/
+    /// `agent_args`) configure whatever `default_agent` names.
+    pub fn resolve_agent(&self, lc: &LoopConfig) -> ResolvedAgent {
+        let name = self.agent_name_for(lc);
+        let is_default = name == self.workbench.default_agent;
+        let preset = builtin_agent_preset(name);
+        let user = self.agents.get(name);
+
+        let binary = user
+            .and_then(|a| a.binary.clone())
+            .or_else(|| {
+                if is_default {
+                    self.workbench.agent_binary.clone()
+                } else {
+                    None
+                }
+            })
+            .or_else(|| preset.as_ref().map(|(b, _)| b.to_string()))
+            .unwrap_or_else(|| name.to_string());
+
+        let args = lc
+            .agent_args
+            .clone()
+            .or_else(|| user.and_then(|a| a.args.clone()))
+            .or_else(|| {
+                if is_default {
+                    self.workbench.agent_args.clone()
+                } else {
+                    None
+                }
+            })
+            .or_else(|| preset.map(|(_, a)| a))
+            .unwrap_or_default();
+
+        ResolvedAgent { binary, args }
     }
 }
 
@@ -487,8 +644,14 @@ tick_script = "skill/scripts/tick.py"
         let cfg = parse(MINIMAL).expect("parse");
         assert_eq!(cfg.schema_version, 1);
         assert_eq!(cfg.workbench.terminal, "konsole");
-        assert_eq!(cfg.workbench.claude_binary, "claude"); // default
+        assert_eq!(cfg.workbench.default_agent, "claude"); // default
+        assert_eq!(cfg.workbench.agent_binary, None); // resolves via preset
         assert_eq!(cfg.workbench.default_dispatch, Dispatch::ResumePrompt); // default
+        // With no explicit binary/args, the default agent resolves to the
+        // built-in claude preset.
+        let resolved = cfg.resolve_agent(&cfg.loops[0]);
+        assert_eq!(resolved.binary, "claude");
+        assert_eq!(resolved.args, vec!["--dangerously-skip-permissions".to_string()]);
         assert_eq!(cfg.loops.len(), 1);
         let lc = &cfg.loops[0];
         assert_eq!(lc.effective_tab_title(), "alpha-loop");
@@ -634,35 +797,95 @@ tick_script = "skill/scripts/tick.py"
     }
 
     #[test]
-    fn round_trip_omits_none_claude_args() {
-        // Loop with claude_args left absent must NOT serialize as
-        // `claude_args = []` — that empty array would silently override
+    fn round_trip_omits_none_agent_args() {
+        // Loop with agent_args left absent must NOT serialize as
+        // `agent_args = []` — that empty array would silently override
         // the workbench-wide default the next time the file is loaded.
         let cfg = parse(MINIMAL).unwrap();
-        assert!(cfg.loops[0].claude_args.is_none());
+        assert!(cfg.loops[0].agent_args.is_none());
         let body = toml::to_string_pretty(&cfg).unwrap();
-        // The workbench-wide `claude_args` IS allowed; only the per-loop
-        // one should be missing.
         let after_loops = body
             .split_once("[[loops]]")
             .map(|(_, rest)| rest)
             .unwrap_or(&body);
         assert!(
-            !after_loops.contains("claude_args"),
-            "round-trip leaked per-loop claude_args:\n{body}"
+            !after_loops.contains("agent_args"),
+            "round-trip leaked per-loop agent_args:\n{body}"
         );
     }
 
     #[test]
-    fn round_trip_preserves_explicit_empty_claude_args() {
+    fn round_trip_preserves_explicit_empty_agent_args() {
         let body = MINIMAL.replace(
             "tick_script = \"skill/scripts/tick.py\"",
-            "tick_script = \"skill/scripts/tick.py\"\nclaude_args = []",
+            "tick_script = \"skill/scripts/tick.py\"\nagent_args = []",
         );
         let cfg = parse(&body).unwrap();
-        assert_eq!(cfg.loops[0].claude_args.as_deref(), Some(&[][..]));
+        assert_eq!(cfg.loops[0].agent_args.as_deref(), Some(&[][..]));
         let out = toml::to_string_pretty(&cfg).unwrap();
-        assert!(out.contains("claude_args = []"));
+        assert!(out.contains("agent_args = []"));
+    }
+
+    #[test]
+    fn legacy_claude_args_alias_still_parses() {
+        // Old configs used `claude_args`; the serde alias keeps them
+        // working and they now populate `agent_args`.
+        let body = MINIMAL.replace(
+            "tick_script = \"skill/scripts/tick.py\"",
+            "tick_script = \"skill/scripts/tick.py\"\nclaude_args = [\"--foo\"]",
+        );
+        let cfg = parse(&body).unwrap();
+        assert_eq!(cfg.loops[0].agent_args.as_deref(), Some(&["--foo".to_string()][..]));
+    }
+
+    #[test]
+    fn legacy_workbench_claude_fields_alias_and_drive_default_agent() {
+        let body = MINIMAL.replace(
+            "central_group = \"1\"",
+            "central_group = \"1\"\nclaude_binary = \"/usr/bin/claude\"\nclaude_args = [\"--foo\"]",
+        );
+        let cfg = parse(&body).unwrap();
+        assert_eq!(cfg.workbench.agent_binary.as_deref(), Some("/usr/bin/claude"));
+        let resolved = cfg.resolve_agent(&cfg.loops[0]);
+        assert_eq!(resolved.binary, "/usr/bin/claude");
+        assert_eq!(resolved.args, vec!["--foo".to_string()]);
+    }
+
+    #[test]
+    fn rejects_unknown_default_agent() {
+        let body = MINIMAL.replace(
+            "central_group = \"1\"",
+            "central_group = \"1\"\ndefault_agent = \"bogus\"",
+        );
+        let err = parse(&body).unwrap_err().to_string();
+        assert!(err.contains("default_agent"), "got: {err}");
+        assert!(err.contains("unknown"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_unknown_loop_agent() {
+        let body = MINIMAL.replace(
+            "dispatch = \"tick_script\"",
+            "dispatch = \"tick_script\"\nagent = \"bogus\"",
+        );
+        let err = parse(&body).unwrap_err().to_string();
+        assert!(err.contains("bogus"), "got: {err}");
+        assert!(err.contains("unknown"), "got: {err}");
+    }
+
+    #[test]
+    fn accepts_custom_agent_defined_in_agents_table() {
+        let body = format!(
+            "{}\n[agents.mycli]\nbinary = \"mycli\"\nargs = [\"--go\"]\n",
+            MINIMAL.replace(
+                "dispatch = \"tick_script\"",
+                "dispatch = \"tick_script\"\nagent = \"mycli\"",
+            )
+        );
+        let cfg = parse(&body).expect("custom agent should validate");
+        let resolved = cfg.resolve_agent(&cfg.loops[0]);
+        assert_eq!(resolved.binary, "mycli");
+        assert_eq!(resolved.args, vec!["--go".to_string()]);
     }
 
     #[test]

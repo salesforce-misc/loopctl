@@ -33,7 +33,7 @@ use agent_loop_workbench::{
 };
 
 #[derive(Parser, Debug)]
-#[command(name = "loopctl", version, about = "Manage Claude agent loops")]
+#[command(name = "loopctl", version, about = "Manage AI agent loops (claude, codex, opencode)")]
 struct Cli {
     /// Path to workbench.toml. Defaults to ~/claude-loops/workbench.toml.
     #[arg(long, global = true)]
@@ -116,6 +116,11 @@ enum Command {
         /// dispatch kind: resume_prompt, tick_script, or none.
         #[arg(long, default_value = "resume_prompt")]
         dispatch: String,
+        /// Agent to run in the loop's pane: claude, codex, opencode, or a
+        /// custom name defined under `[agents.*]`. Omit to inherit
+        /// workbench.default_agent.
+        #[arg(long)]
+        agent: Option<String>,
         /// Required iff dispatch=tick_script. Path relative to dir.
         #[arg(long)]
         tick_script: Option<String>,
@@ -238,6 +243,7 @@ async fn main() -> Result<()> {
             message,
             prompt_file,
             dispatch,
+            agent,
             tick_script,
             no_up,
         } => {
@@ -251,6 +257,7 @@ async fn main() -> Result<()> {
                 message.as_deref(),
                 prompt_file.as_deref(),
                 dispatch,
+                agent.as_deref(),
                 tick_script.as_deref(),
                 !*no_up,
             )
@@ -788,6 +795,7 @@ async fn cmd_add_loop(
     message: Option<&str>,
     prompt_file: Option<&std::path::Path>,
     dispatch: &str,
+    agent: Option<&str>,
     tick_script: Option<&str>,
     auto_up: bool,
 ) -> Result<()> {
@@ -869,6 +877,21 @@ async fn cmd_add_loop(
     config::Schedule::from_str(schedule)
         .with_context(|| format!("invalid --schedule {schedule:?}"))?;
 
+    // Validate --agent up-front against built-ins + any [agents.*] already
+    // in the config, so we don't write a half-loop that the post-write
+    // re-parse then rejects.
+    if let Some(a) = agent {
+        let existing = config::load(&cfg_path)
+            .with_context(|| format!("load workbench.toml at {}", cfg_path.display()))?;
+        if !existing.is_known_agent(a) {
+            anyhow::bail!(
+                "unknown agent `{a}` (built-ins: {}; or add an [agents.{a}] table to {})",
+                config::BUILTIN_AGENTS.join(", "),
+                cfg_path.display(),
+            );
+        }
+    }
+
     let anchor = agent_loop_workbench::readme::slugify_heading(&heading_value);
     add_to_readme(&loops_dir.join("README.md"), &heading_value, &anchor, &prompt)?;
     add_to_workbench_toml(
@@ -879,6 +902,7 @@ async fn cmd_add_loop(
         group,
         schedule,
         &dispatch_value,
+        agent,
         tick_script,
     )?;
     // Re-validate the freshly-written config; bail loudly if we broke it.
@@ -985,6 +1009,7 @@ fn add_to_workbench_toml(
     group: &str,
     schedule: &str,
     dispatch: &str,
+    agent: Option<&str>,
     tick_script: Option<&str>,
 ) -> Result<()> {
     let mut existing = std::fs::read_to_string(path)
@@ -998,16 +1023,19 @@ fn add_to_workbench_toml(
     existing.push_str(&format!(
         "[[loops]]\nname             = \"{name}\"\ndir              = \"{dir}\"\nreadme_anchor    = \"{anchor}\"\ngroup_key        = \"{group}\"\nschedule         = \"{schedule}\"\ndispatch         = \"{dispatch}\"\n",
     ));
+    if let Some(a) = agent {
+        existing.push_str(&format!("agent            = \"{a}\"\n"));
+    }
     if let Some(t) = tick_script {
         existing.push_str(&format!("tick_script      = \"{t}\"\n"));
     }
-    // New loops get an explicit empty claude_args so they DON'T inherit
-    // the workbench-wide --dangerously-skip-permissions default. The
-    // operator can flip this to inherit (delete the line) once the loop
-    // has earned hands-off trust.
-    existing.push_str("# New loop: stock claude with normal permission prompts.\n");
-    existing.push_str("# Delete this line to inherit workbench.claude_args (e.g. --dangerously-skip-permissions).\n");
-    existing.push_str("claude_args      = []\n");
+    // New loops get an explicit empty agent_args so they DON'T inherit
+    // the workbench-wide --dangerously-skip-permissions (or per-agent
+    // hands-off) default. The operator can flip this to inherit (delete
+    // the line) once the loop has earned hands-off trust.
+    existing.push_str("# New loop: stock agent with normal permission prompts.\n");
+    existing.push_str("# Delete this line to inherit the agent's hands-off args (e.g. --dangerously-skip-permissions).\n");
+    existing.push_str("agent_args       = []\n");
     std::fs::write(path, existing).with_context(|| format!("write workbench.toml at {path:?}"))?;
     config::snapshot_in_git(path, &format!("loopctl: add-loop {name}"));
     Ok(())

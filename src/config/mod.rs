@@ -20,8 +20,8 @@ pub mod schema;
 pub mod user;
 
 pub use schema::{
-    Dispatch, KonsoleSettings, LoopConfig, Schedule, TerminalSettings, WorkbenchConfig,
-    WorkbenchSettings,
+    builtin_agent_preset, AgentOverride, Dispatch, KonsoleSettings, LoopConfig, ResolvedAgent,
+    Schedule, TerminalSettings, WorkbenchConfig, WorkbenchSettings, BUILTIN_AGENTS,
 };
 pub use user::{load_user_config, save_user_config, user_config_path, UserConfig};
 
