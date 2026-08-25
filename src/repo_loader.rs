@@ -380,8 +380,10 @@ fn write_workbench_toml(
     s.push_str(&format!("terminal         = \"{terminal_name}\"\n"));
     s.push_str(&format!("central_group    = \"{central}\"\n"));
     s.push_str("default_dispatch = \"resume_prompt\"\n");
-    s.push_str("# Default claude args applied to every loop. New loops opt out (see add-loop).\n");
-    s.push_str("claude_args      = [\"--dangerously-skip-permissions\"]\n\n");
+    s.push_str("# Agent every loop runs unless it sets its own `agent` (claude | codex | opencode).\n");
+    s.push_str("default_agent    = \"claude\"\n");
+    s.push_str("# Default args for the default agent. New loops opt out (see add-loop).\n");
+    s.push_str("agent_args       = [\"--dangerously-skip-permissions\"]\n\n");
 
     for l in loops {
         let group = plan

@@ -59,7 +59,7 @@ impl DaemonContext {
 
 /// Latest migration version. Bumped by changes that need to mutate
 /// existing user workbench.toml files atomically at daemon startup.
-const LATEST_MIGRATION_V: u32 = 2;
+const LATEST_MIGRATION_V: u32 = 3;
 
 /// Apply one-shot migrations to the in-memory config and persist them
 /// back to `config_path`. Migrations are gated by
@@ -78,8 +78,8 @@ fn apply_migrations(config: &mut WorkbenchConfig, config_path: &Path) -> Result<
     if config.loopctl_migration_v < 1 {
         let mut stripped = 0usize;
         for lc in config.loops.iter_mut() {
-            if matches!(&lc.claude_args, Some(v) if v.is_empty()) {
-                lc.claude_args = None;
+            if matches!(&lc.agent_args, Some(v) if v.is_empty()) {
+                lc.agent_args = None;
                 stripped += 1;
             }
         }
@@ -104,6 +104,18 @@ fn apply_migrations(config: &mut WorkbenchConfig, config_path: &Path) -> Result<
             "migration v2: per-loop key `slug` is now `name`; older configs are accepted via serde alias and rewritten on persist"
         );
         config.loopctl_migration_v = 2;
+    }
+
+    // v3: `claude_binary`/`claude_args` are now `agent_binary`/`agent_args`
+    // (workbench + per-loop), part of multi-agent support (claude / codex /
+    // opencode). Like v2, the serde aliases mean the in-memory struct is
+    // already correct regardless of the on-disk key; the unconditional
+    // rewrite below emits the new names. Nothing to mutate here.
+    if config.loopctl_migration_v < 3 {
+        tracing::info!(
+            "migration v3: `claude_binary`/`claude_args` renamed to `agent_binary`/`agent_args`; older configs are accepted via serde alias and rewritten on persist"
+        );
+        config.loopctl_migration_v = 3;
     }
 
     // Persist the migrated config so subsequent runs skip the migration.
@@ -435,12 +447,13 @@ claude_args = ["--allowed-tools", "Read"]
         std::fs::write(&p, body).unwrap();
         let mut cfg = parse(body);
         apply_migrations(&mut cfg, &p).unwrap();
-        // Migration v1 was about claude_args; v2 just bumps the version
-        // and triggers the slug→name rewrite on persist. Latest is 2.
-        assert_eq!(cfg.loopctl_migration_v, 2);
-        assert!(cfg.loops[0].claude_args.is_none(), "alpha [] should be cleared");
+        // Migration v1 stripped empty per-loop arg overrides; later
+        // migrations just bump the version and rewrite on persist. Latest
+        // is now 3 (claude_* → agent_* rename).
+        assert_eq!(cfg.loopctl_migration_v, 3);
+        assert!(cfg.loops[0].agent_args.is_none(), "alpha [] should be cleared");
         assert_eq!(
-            cfg.loops[1].claude_args.as_deref(),
+            cfg.loops[1].agent_args.as_deref(),
             Some(&["--allowed-tools".to_string(), "Read".to_string()][..]),
             "beta with real args must NOT be touched"
         );
@@ -452,7 +465,7 @@ claude_args = ["--allowed-tools", "Read"]
         let p = dir.path().join("workbench.toml");
         let body = r#"
 schema_version = 1
-loopctl_migration_v = 2
+loopctl_migration_v = 3
 
 [workbench]
 claude_loops_dir = "~/x"
@@ -466,14 +479,53 @@ readme_anchor = "alpha"
 group_key = "7"
 schedule = "none"
 dispatch = "resume_prompt"
-claude_args = []
+agent_args = []
 "#;
         std::fs::write(&p, body).unwrap();
         let mut cfg = parse(body);
         apply_migrations(&mut cfg, &p).unwrap();
         // Already at the latest version: hand-set [] is left alone.
-        assert_eq!(cfg.loops[0].claude_args.as_deref(), Some(&[][..]));
-        assert_eq!(cfg.loopctl_migration_v, 2);
+        assert_eq!(cfg.loops[0].agent_args.as_deref(), Some(&[][..]));
+        assert_eq!(cfg.loopctl_migration_v, 3);
+    }
+
+    #[test]
+    fn migration_v3_rewrites_legacy_claude_fields_to_agent() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("workbench.toml");
+        // Pre-v3 config using the old claude_binary/claude_args keys.
+        let body = r#"
+schema_version = 1
+loopctl_migration_v = 2
+
+[workbench]
+claude_loops_dir = "~/x"
+terminal = "konsole"
+central_group = "1"
+claude_binary = "claude"
+claude_args = ["--dangerously-skip-permissions"]
+
+[[loops]]
+name = "alpha"
+dir = "alpha"
+readme_anchor = "alpha"
+group_key = "7"
+schedule = "none"
+dispatch = "resume_prompt"
+claude_args = ["--allowed-tools", "Read"]
+"#;
+        std::fs::write(&p, body).unwrap();
+        let mut cfg = parse(body);
+        apply_migrations(&mut cfg, &p).unwrap();
+        assert_eq!(cfg.loopctl_migration_v, 3);
+        // On-disk file must now use the new key names and none of the old.
+        let on_disk = std::fs::read_to_string(&p).unwrap();
+        assert!(on_disk.contains("agent_binary"), "expected agent_binary:\n{on_disk}");
+        assert!(on_disk.contains("agent_args"), "expected agent_args:\n{on_disk}");
+        assert!(
+            !on_disk.contains("claude_binary") && !on_disk.contains("claude_args"),
+            "legacy claude_* keys must be gone:\n{on_disk}"
+        );
     }
 
     #[test]
@@ -501,7 +553,7 @@ dispatch = "resume_prompt"
         std::fs::write(&p, body).unwrap();
         let mut cfg = parse(body);
         apply_migrations(&mut cfg, &p).unwrap();
-        assert_eq!(cfg.loopctl_migration_v, 2);
+        assert_eq!(cfg.loopctl_migration_v, 3);
         assert_eq!(cfg.loops[0].name, "alpha");
         // The persisted file now uses `name = ...` not `slug = ...`.
         let on_disk = std::fs::read_to_string(&p).unwrap();

@@ -237,7 +237,7 @@ async fn ensure_pane_for_loop(
             lc.name
         ));
     }
-    let initial = Some(claude_invocation(config, lc));
+    let initial = Some(agent_invocation(config, lc));
     let spec = PaneSpec {
         group_key: lc.group_key.clone(),
         title: lc.effective_tab_title().to_string(),
@@ -248,10 +248,13 @@ async fn ensure_pane_for_loop(
 }
 
 /// Build the shell line that the konsole tab will run on launch:
-/// `<claude_binary> <claude_args...>` with each arg POSIX-quoted.
-fn claude_invocation(config: &WorkbenchConfig, lc: &LoopConfig) -> String {
-    let mut s = posix_quote(&config.workbench.claude_binary);
-    for a in lc.effective_claude_args(&config.workbench) {
+/// `<agent_binary> <agent_args...>` with each arg POSIX-quoted. The agent
+/// (claude / codex / opencode / custom) and its args are resolved from the
+/// loop's `agent`, the `[agents.*]` overrides, and the workbench defaults.
+fn agent_invocation(config: &WorkbenchConfig, lc: &LoopConfig) -> String {
+    let resolved = config.resolve_agent(lc);
+    let mut s = posix_quote(&resolved.binary);
+    for a in &resolved.args {
         s.push(' ');
         s.push_str(&posix_quote(a));
     }
@@ -922,7 +925,7 @@ dispatch = "resume_prompt"
     }
 
     #[test]
-    fn claude_invocation_uses_workbench_default_when_loop_unset() {
+    fn agent_invocation_uses_workbench_default_when_loop_unset() {
         let mut cfg = config::parse(
             r#"
 schema_version = 1
@@ -942,23 +945,88 @@ dispatch = "resume_prompt"
 "#,
         )
         .unwrap();
-        // workbench-wide default applies when LoopConfig.claude_args is None.
+        // The default agent (claude) preset applies when the loop and the
+        // workbench set no explicit args.
         let alpha = &cfg.loops[0];
         assert_eq!(
-            super::claude_invocation(&cfg, alpha),
+            super::agent_invocation(&cfg, alpha),
             "claude --dangerously-skip-permissions"
         );
 
-        // Explicit override at workbench level.
-        cfg.workbench.claude_args = vec!["--allowed-tools".into(), "Read,Write".into()];
+        // Explicit override at workbench level (formerly claude_args).
+        cfg.workbench.agent_args = Some(vec!["--allowed-tools".into(), "Read,Write".into()]);
         assert_eq!(
-            super::claude_invocation(&cfg, alpha),
+            super::agent_invocation(&cfg, alpha),
             "claude --allowed-tools Read,Write"
         );
     }
 
     #[test]
-    fn claude_invocation_loop_override_wins_and_empty_means_no_args() {
+    fn agent_invocation_selects_codex_preset_by_loop_agent() {
+        let cfg = config::parse(
+            r#"
+schema_version = 1
+
+[workbench]
+claude_loops_dir = "/tmp"
+terminal = "konsole"
+central_group = "1"
+
+[[loops]]
+name = "demo-codex"
+dir = "demo-codex"
+readme_anchor = "demo-codex"
+group_key = "2"
+schedule = "none"
+dispatch = "resume_prompt"
+agent = "codex"
+"#,
+        )
+        .unwrap();
+        // No [agents.*] override, no per-loop args: the built-in codex
+        // preset (binary + hands-off flag) drives the invocation.
+        let lc = cfg.loop_by_name("demo-codex").unwrap();
+        assert_eq!(
+            super::agent_invocation(&cfg, lc),
+            "codex --dangerously-bypass-approvals-and-sandbox"
+        );
+    }
+
+    #[test]
+    fn agent_invocation_honors_agents_table_override() {
+        let cfg = config::parse(
+            r#"
+schema_version = 1
+
+[workbench]
+claude_loops_dir = "/tmp"
+terminal = "konsole"
+central_group = "1"
+
+[agents.codex]
+binary = "/opt/codex/bin/codex"
+args = ["exec", "--full-auto"]
+
+[[loops]]
+name = "demo-codex"
+dir = "demo-codex"
+readme_anchor = "demo-codex"
+group_key = "2"
+schedule = "none"
+dispatch = "resume_prompt"
+agent = "codex"
+"#,
+        )
+        .unwrap();
+        let lc = cfg.loop_by_name("demo-codex").unwrap();
+        assert_eq!(
+            super::agent_invocation(&cfg, lc),
+            "/opt/codex/bin/codex exec --full-auto"
+        );
+    }
+
+    #[test]
+    fn agent_invocation_loop_override_wins_and_empty_means_no_args() {
         let cfg = config::parse(
             r#"
 schema_version = 1
@@ -990,9 +1058,9 @@ claude_args = ["--allowed-tools", "Read"]
         .unwrap();
         let alpha = cfg.loop_by_name("alpha").unwrap();
         let beta = cfg.loop_by_name("beta").unwrap();
-        assert_eq!(super::claude_invocation(&cfg, alpha), "claude");
+        assert_eq!(super::agent_invocation(&cfg, alpha), "claude");
         assert_eq!(
-            super::claude_invocation(&cfg, beta),
+            super::agent_invocation(&cfg, beta),
             "claude --allowed-tools Read"
         );
     }

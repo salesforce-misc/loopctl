@@ -1,12 +1,16 @@
 # loopctl
 
-A Rust CLI + TUI for orchestrating long-running [Claude Code][claude-code]
+A Rust CLI + TUI for orchestrating long-running coding-agent
 "loops" — persistent agent sessions whose state lives in a markdown repo.
+Each loop can run [Claude Code][claude-code], [Codex][codex], or
+[opencode][opencode] (per-loop, selectable via the `agent` field).
 Native to KDE Plasma: each loop runs as a Konsole tab on a chosen virtual
 desktop, with a central daemon owning schedules, health checks, and
 restart-resilient state.
 
 [claude-code]: https://www.anthropic.com/claude-code
+[codex]: https://github.com/openai/codex
+[opencode]: https://opencode.ai
 
 ## Status
 
@@ -130,11 +134,19 @@ claude_loops_dir = "~/claude-loops"
 terminal         = "konsole"
 central_group    = "8"
 default_dispatch = "tick_script"
-claude_args      = ["--dangerously-skip-permissions"]   # workbench-wide default
+default_agent    = "claude"                             # agent a loop uses if it sets none
+agent_args       = ["--dangerously-skip-permissions"]   # default-agent args (alias: claude_args)
 paste_submit_delay_ms = 700                              # bump if Enter doesn't auto-fire
 
 [terminal.konsole]
 profile = "ClaudeLoop"   # optional Konsole profile name
+
+# Per-agent overrides. Built-in presets exist for `claude`, `codex`, and
+# `opencode` (binary + hands-off flag), so these tables are only needed to
+# change a binary/args or to define a brand-new custom agent.
+[agents.codex]
+binary = "codex"
+args   = ["--dangerously-bypass-approvals-and-sandbox"]
 
 [[loops]]
 name             = "alpha-loop"
@@ -145,9 +157,18 @@ schedule         = "every 10m"
 dispatch         = "tick_script" # or "resume_prompt", or "none"
 tick_script      = "skill/scripts/tick.py"
 tick_args        = ["--cache", "$HOME/.claude/changecase-tracker-cache/cases.json"]
-# Optional per-loop override of claude_args. `[]` = stock claude with prompts.
-# claude_args = []
+# agent          = "codex"       # claude | codex | opencode | custom; omit = default_agent
+# Optional per-loop override of agent_args. `[]` = stock agent with prompts.
+# agent_args = []
 ```
+
+**Agents.** Each loop launches a coding-agent CLI in its pane — `claude`
+by default, or `codex` / `opencode` (or any custom agent from `[agents.*]`)
+via the per-loop `agent` field. Built-in presets supply each agent's binary
+and hands-off flag; `[agents.<name>]` overrides them or defines new agents.
+The older `claude_binary` / `claude_args` keys still parse (they're aliases
+for `agent_binary` / `agent_args`) and are rewritten to the new names on
+first daemon load.
 
 State (rebuildable, kept out of the workbench repo):
 `~/.local/state/agent-loop-workbench/state.json`
