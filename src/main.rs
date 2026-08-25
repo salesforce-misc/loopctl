@@ -811,10 +811,17 @@ async fn cmd_add_loop(
         }
     };
     let cfg_path = resolve_config_path(cli)?;
-    let loops_dir = cfg_path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("config path has no parent: {cfg_path:?}"))?
-        .to_path_buf();
+    // The loop's workdir + README live under `claude_loops_dir`, which is
+    // where the daemon resolves them at `up` time. Do NOT use
+    // `cfg_path.parent()`: the canonical config lives at
+    // `~/.config/loopctl/workbench.toml`, which is usually NOT the loops
+    // repo — using the parent would create the dir/README in the wrong
+    // place and `up` would then fail with "workdir does not exist".
+    let cfg = config::load(&cfg_path)
+        .with_context(|| format!("load workbench.toml at {}", cfg_path.display()))?;
+    let loops_dir = std::path::PathBuf::from(agent_loop_workbench::util::expand_path(
+        &cfg.workbench.claude_loops_dir,
+    ));
     let dir_value = dir.unwrap_or(name).to_string();
     // Reject `..` and absolute paths up front. The same check runs in
     // LoopConfig::validate, but only AFTER the file is written; we
@@ -881,9 +888,7 @@ async fn cmd_add_loop(
     // in the config, so we don't write a half-loop that the post-write
     // re-parse then rejects.
     if let Some(a) = agent {
-        let existing = config::load(&cfg_path)
-            .with_context(|| format!("load workbench.toml at {}", cfg_path.display()))?;
-        if !existing.is_known_agent(a) {
+        if !cfg.is_known_agent(a) {
             anyhow::bail!(
                 "unknown agent `{a}` (built-ins: {}; or add an [agents.{a}] table to {})",
                 config::BUILTIN_AGENTS.join(", "),
