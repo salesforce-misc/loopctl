@@ -103,7 +103,7 @@ hand-edit — re-run the generator after every `Cargo.lock` change.
 | [equivalent](https://github.com/indexmap-rs/equivalent) | 1.0.2 | Apache License 2.0 |
 | [errno](https://github.com/lambda-fairy/rust-errno) | 0.3.14 | Apache License 2.0 |
 | [event-listener-strategy](https://github.com/smol-rs/event-listener-strategy) | 0.5.4 | Apache License 2.0 |
-| [event-listener](https://github.com/smol-rs/event-listener) | 5.4.1 | Apache License 2.0 |
+| [event-listener](https://github.com/smol-rs/event-listener) | 5.4.2 | Apache License 2.0 |
 | [fastrand](https://github.com/smol-rs/fastrand) | 2.4.1 | Apache License 2.0 |
 | [find-msvc-tools](https://github.com/rust-lang/cc-rs) | 0.1.9 | Apache License 2.0 |
 | [futures-lite](https://github.com/smol-rs/futures-lite) | 2.6.1 | Apache License 2.0 |
@@ -167,7 +167,7 @@ hand-edit — re-run the generator after every `Cargo.lock` change.
 | [enumflags2_derive](https://github.com/meithecatte/enumflags2) | 0.7.12 | Apache License 2.0 |
 | [allocator-api2](https://github.com/zakarumych/allocator-api2) | 0.2.21 | Apache License 2.0 |
 | [android_system_properties](https://github.com/nical/android_system_properties) | 0.1.5 | Apache License 2.0 |
-| [anyhow](https://github.com/dtolnay/anyhow) | 1.0.102 | Apache License 2.0 |
+| [anyhow](https://github.com/dtolnay/anyhow) | 1.0.104 | Apache License 2.0 |
 | [async-trait](https://github.com/dtolnay/async-trait) | 0.1.89 | Apache License 2.0 |
 | [directories](https://github.com/soc/directories-rs) | 5.0.1 | Apache License 2.0 |
 | [dirs-sys](https://github.com/dirs-dev/dirs-sys-rs) | 0.4.1 | Apache License 2.0 |
@@ -235,7 +235,7 @@ hand-edit — re-run the generator after every `Cargo.lock` change.
 | [compact_str](https://github.com/ParkMyCar/compact_str) | 0.8.1 | MIT License |
 | [castaway](https://github.com/sagebind/castaway) | 0.2.4 | MIT License |
 | [libredox](https://gitlab.redox-os.org/redox-os/libredox.git) | 0.1.16 | MIT License |
-| [tokio](https://github.com/tokio-rs/tokio) | 1.52.3 | MIT License |
+| [tokio](https://github.com/tokio-rs/tokio) | 1.54.1 | MIT License |
 | [crossterm](https://github.com/crossterm-rs/crossterm) | 0.28.1 | MIT License |
 | [crossterm_winapi](https://github.com/crossterm-rs/crossterm-winapi) | 0.9.1 | MIT License |
 | [endi](https://github.com/zeenix/endi) | 1.1.1 | MIT License |
@@ -2971,7 +2971,7 @@ limitations under the License.
 
 ### Apache License 2.0
 
-Applies to: `async-channel` 2.5.0, `async-io` 2.6.0, `async-lock` 3.4.2, `async-process` 2.5.0, `async-signal` 0.2.14, `async-task` 4.7.1, `atomic-waker` 1.1.2, `autocfg` 1.5.0, `bitflags` 2.11.1, `blocking` 1.6.2, `bumpalo` 3.20.2, `cc` 1.2.62, `cfg-if` 1.0.4, `concurrent-queue` 2.5.0, `core-foundation-sys` 0.8.7, `crossbeam-utils` 0.8.21, `either` 1.15.0, `equivalent` 1.0.2, `errno` 0.3.14, `event-listener-strategy` 0.5.4, `event-listener` 5.4.1, `fastrand` 2.4.1, `find-msvc-tools` 0.1.9, `futures-lite` 2.6.1, `hashbrown` 0.15.5, `hashbrown` 0.17.1, `heck` 0.5.0, `hermit-abi` 0.5.2, `indexmap` 2.14.0, `itertools` 0.13.0, `js-sys` 0.3.98, `lazy_static` 1.5.0, `linux-raw-sys` 0.12.1, `linux-raw-sys` 0.4.15, `lock_api` 0.4.14, `log` 0.4.29, `num-traits` 0.2.19, `once_cell` 1.21.4, `ordered-stream` 0.2.0, `parking` 2.2.1, `parking_lot` 0.12.5, `parking_lot_core` 0.9.12, `piper` 0.2.5, `polling` 3.11.0, `regex-automata` 0.4.14, `regex-syntax` 0.8.10, `rustix` 0.38.44, `rustix` 1.1.4, `scopeguard` 1.2.0, `shellexpand` 3.1.2, `signal-hook-mio` 0.2.5, `signal-hook-registry` 1.4.8, `signal-hook` 0.3.18, `smallvec` 1.15.1, `socket2` 0.6.3, `tempfile` 3.27.0, `thread_local` 1.1.9, `unicode-segmentation` 1.13.2, `unicode-truncate` 1.1.0, `unicode-width` 0.1.14, `unicode-width` 0.2.0, `version_check` 0.9.5, `wasi` 0.11.1+wasi-snapshot-preview1, `wasip2` 1.0.3+wasi-0.2.9, `wasm-bindgen-macro-support` 0.2.121, `wasm-bindgen-macro` 0.2.121, `wasm-bindgen-shared` 0.2.121, `wasm-bindgen` 0.2.121, `wit-bindgen` 0.51.0, `wit-bindgen` 0.57.1
+Applies to: `async-channel` 2.5.0, `async-io` 2.6.0, `async-lock` 3.4.2, `async-process` 2.5.0, `async-signal` 0.2.14, `async-task` 4.7.1, `atomic-waker` 1.1.2, `autocfg` 1.5.0, `bitflags` 2.11.1, `blocking` 1.6.2, `bumpalo` 3.20.2, `cc` 1.2.62, `cfg-if` 1.0.4, `concurrent-queue` 2.5.0, `core-foundation-sys` 0.8.7, `crossbeam-utils` 0.8.21, `either` 1.15.0, `equivalent` 1.0.2, `errno` 0.3.14, `event-listener-strategy` 0.5.4, `event-listener` 5.4.2, `fastrand` 2.4.1, `find-msvc-tools` 0.1.9, `futures-lite` 2.6.1, `hashbrown` 0.15.5, `hashbrown` 0.17.1, `heck` 0.5.0, `hermit-abi` 0.5.2, `indexmap` 2.14.0, `itertools` 0.13.0, `js-sys` 0.3.98, `lazy_static` 1.5.0, `linux-raw-sys` 0.12.1, `linux-raw-sys` 0.4.15, `lock_api` 0.4.14, `log` 0.4.29, `num-traits` 0.2.19, `once_cell` 1.21.4, `ordered-stream` 0.2.0, `parking` 2.2.1, `parking_lot` 0.12.5, `parking_lot_core` 0.9.12, `piper` 0.2.5, `polling` 3.11.0, `regex-automata` 0.4.14, `regex-syntax` 0.8.10, `rustix` 0.38.44, `rustix` 1.1.4, `scopeguard` 1.2.0, `shellexpand` 3.1.2, `signal-hook-mio` 0.2.5, `signal-hook-registry` 1.4.8, `signal-hook` 0.3.18, `smallvec` 1.15.1, `socket2` 0.6.3, `tempfile` 3.27.0, `thread_local` 1.1.9, `unicode-segmentation` 1.13.2, `unicode-truncate` 1.1.0, `unicode-width` 0.1.14, `unicode-width` 0.2.0, `version_check` 0.9.5, `wasi` 0.11.1+wasi-snapshot-preview1, `wasip2` 1.0.3+wasi-0.2.9, `wasm-bindgen-macro-support` 0.2.121, `wasm-bindgen-macro` 0.2.121, `wasm-bindgen-shared` 0.2.121, `wasm-bindgen` 0.2.121, `wit-bindgen` 0.51.0, `wit-bindgen` 0.57.1
 
 ```
                               Apache License
@@ -4154,7 +4154,7 @@ limitations under the License.
 
 ### Apache License 2.0
 
-Applies to: `allocator-api2` 0.2.21, `android_system_properties` 0.1.5, `anyhow` 1.0.102, `async-trait` 0.1.89, `directories` 5.0.1, `dirs-sys` 0.4.1, `dirs-sys` 0.5.0, `dirs` 6.0.0, `ident_case` 1.0.1, `indoc` 2.0.7, `itoa` 1.0.18, `libc` 0.2.186, `paste` 1.0.15, `pin-project-lite` 0.2.17, `proc-macro2` 1.0.106, `quote` 1.0.45, `r-efi` 6.0.0, `rand` 0.8.6, `rustversion` 1.0.22, `ryu` 1.0.23, `serde` 1.0.228, `serde_core` 1.0.228, `serde_derive` 1.0.228, `serde_json` 1.0.149, `serde_repr` 0.1.20, `shlex` 1.3.0, `siphasher` 1.0.3, `syn` 2.0.117, `thiserror-impl` 1.0.69, `thiserror-impl` 2.0.18, `thiserror` 1.0.69, `thiserror` 2.0.18, `unicode-ident` 1.0.24, `utf8parse` 0.2.2, `wasip3` 0.4.0+wasi-0.3.0-rc-2026-01-06, `winapi-i686-pc-windows-gnu` 0.4.0, `winapi-x86_64-pc-windows-gnu` 0.4.0
+Applies to: `allocator-api2` 0.2.21, `android_system_properties` 0.1.5, `anyhow` 1.0.104, `async-trait` 0.1.89, `directories` 5.0.1, `dirs-sys` 0.4.1, `dirs-sys` 0.5.0, `dirs` 6.0.0, `ident_case` 1.0.1, `indoc` 2.0.7, `itoa` 1.0.18, `libc` 0.2.186, `paste` 1.0.15, `pin-project-lite` 0.2.17, `proc-macro2` 1.0.106, `quote` 1.0.45, `r-efi` 6.0.0, `rand` 0.8.6, `rustversion` 1.0.22, `ryu` 1.0.23, `serde` 1.0.228, `serde_core` 1.0.228, `serde_derive` 1.0.228, `serde_json` 1.0.149, `serde_repr` 0.1.20, `shlex` 1.3.0, `siphasher` 1.0.3, `syn` 2.0.117, `thiserror-impl` 1.0.69, `thiserror-impl` 2.0.18, `thiserror` 1.0.69, `thiserror` 2.0.18, `unicode-ident` 1.0.24, `utf8parse` 0.2.2, `wasip3` 0.4.0+wasi-0.3.0-rc-2026-01-06, `winapi-i686-pc-windows-gnu` 0.4.0, `winapi-x86_64-pc-windows-gnu` 0.4.0
 
 ```
 Apache License
@@ -5320,7 +5320,7 @@ SOFTWARE.
 
 ### MIT License
 
-Applies to: `tokio` 1.52.3
+Applies to: `tokio` 1.54.1
 
 ```
 MIT License
